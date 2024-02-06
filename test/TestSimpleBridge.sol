@@ -2,7 +2,13 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-
+import "forge-std/console.sol";
+import {Counter} from "src/Counter.sol";
+import {ChainlinkMessageReceiver} from "src/bridge-adapter/chainlink/Receiver.sol";
+import {ChainlinkMessageSender} from "src/bridge-adapter/chainlink/Sender.sol";
+import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
+import {MockRouter} from "src/bridge-adapter/chainlink/MockRouter.sol";
+import {MockToken} from "src/utils/MockToken.sol";
 contract ForkTest is Test {
     // the identifiers of the forks
     uint256 mainnetFork_1;
@@ -62,11 +68,11 @@ contract ForkTest is Test {
         assertEq(vm.activeFork(), mainnetFork_1);
 
         // the new contract is written to `mainnetFork`'s storage
-        SimpleStorageContract simple = new SimpleStorageContract();
+        Counter simple = new Counter();
 
         // and can be used as normal
-        simple.set(100);
-        assertEq(simple.value(), 100);
+        simple.setNumber(100);
+        assertEq(simple.number(), 100);
 
         // after switching to another contract we still know `address(simple)` but the contract only lives in `mainnetFork`
         vm.selectFork(mainnetFork_2);
@@ -77,17 +83,66 @@ contract ForkTest is Test {
         * "Contract 0xCe71065D4017F316EC606Fe4422e11eB2c47c246 does not exist on active fork with id `1`
         *       But exists on non active forks: `[0]`"
         */
+
         // simple.value();
+    }
+    /*
+        struct Any2EVMMessage {
+            bytes32 messageId; // MessageId corresponding to ccipSend on source.
+            uint64 sourceChainSelector; // Source chain selector.
+            bytes sender; // abi.decode(sender) if coming from an EVM chain.
+            bytes data; // payload sent in original message.
+            EVMTokenAmount[] destTokenAmounts; // Tokens and their amounts in their destination chain representation.
+        }
+     */
+    function testChainlinkCCIP() public{
+
+        address mock_sender = 0x3333333333333333333333333333333333333333;
+        Client.Any2EVMMessage memory message = Client.Any2EVMMessage({
+            messageId: bytes32(0),
+            sourceChainSelector: 1,
+            sender: abi.encode(mock_sender),
+            data: abi.encode("hello im sender"),
+            destTokenAmounts: new Client.EVMTokenAmount[](0)
+        });
+        // setup
+        vm.selectFork(mainnetFork_1);
+        MockRouter mock_router_chain1 = new MockRouter();
+        MockToken mock_token = new MockToken();
+        address mock_link = address(mock_token);
+        ChainlinkMessageSender sender = new ChainlinkMessageSender(address(mock_router_chain1),mock_link);
+        vm.selectFork(mainnetFork_2);
+        MockRouter mock_router_chain2 = new MockRouter();
+        ChainlinkMessageReceiver receiver = new ChainlinkMessageReceiver(address(mock_router_chain2));
+        // send a message
+        vm.selectFork(mainnetFork_1);
+        // function send(
+        //         uint64 destinationChainSelector,
+        //         address receiver,
+        //         string memory messageText,
+        //         PayFeesIn payFeesIn
+        //         )
+        bytes32 messageid = sender.send(1, address(receiver), "hello im sender", ChainlinkMessageSender.PayFeesIn.Native);
+        console.logBytes32(messageid);
+        // receive a message
+        vm.selectFork(mainnetFork_2);
+        vm.deal(address(mock_router_chain2),10**18);
+        vm.prank(address(mock_router_chain2));
+        receiver.ccipReceive(message);
+        // expect message
+        (bytes32 latestMessageId, uint64 latestSourceChainSelector, address latestSender, string memory latestMessage) = receiver.getLatestMessageDetails();
+        assertEq(abi.encode(latestMessage), abi.encode("hello im sender"));
+
     }
 }
 contract SimpleCrossChainContract {
     uint256 public value;
 
     event ValueSet(uint256 value, uint256 chain_id, address destination);
-    event sendMsg(uint256 _value, uint chain_id, address destination);
+    event msgSent(uint256 _value, uint chain_id, address destination);
 
     function sendMsg(uint256 _value, uint chain_id, address destination) public {
-        emit sendMsg(_value, chain_id, destination);
+        emit msgSent(_value, chain_id, destination);
     }
 
     function receiveMsg(uint256 _value, uint chain_id, address destination) public {
