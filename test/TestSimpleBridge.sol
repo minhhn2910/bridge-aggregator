@@ -7,8 +7,12 @@ import {Counter} from "src/Counter.sol";
 import {ChainlinkMessageReceiver} from "src/bridge-adapter/chainlink/Receiver.sol";
 import {ChainlinkMessageSender} from "src/bridge-adapter/chainlink/Sender.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
-import {MockRouter} from "src/bridge-adapter/chainlink/MockRouter.sol";
+import {MockRouterChainlink} from "src/bridge-adapter/chainlink/MockRouter.sol";
 import {MockToken} from "src/utils/MockToken.sol";
+import {LayerZeroReceiver} from "src/bridge-adapter/layerzero/Receiver.sol";
+import {LayerZeroSender} from "src/bridge-adapter/layerzero/Sender.sol";
+import {MockEndpointLayerZero} from "src/bridge-adapter/layerzero/MockEndpoint.sol";
+import {Origin, ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 contract ForkTest is Test {
     // the identifiers of the forks
     uint256 mainnetFork_1;
@@ -107,12 +111,12 @@ contract ForkTest is Test {
         });
         // setup
         vm.selectFork(mainnetFork_1);
-        MockRouter mock_router_chain1 = new MockRouter();
+        MockRouterChainlink mock_router_chain1 = new MockRouterChainlink();
         MockToken mock_token = new MockToken();
         address mock_link = address(mock_token);
         ChainlinkMessageSender sender = new ChainlinkMessageSender(address(mock_router_chain1),mock_link);
         vm.selectFork(mainnetFork_2);
-        MockRouter mock_router_chain2 = new MockRouter();
+        MockRouterChainlink mock_router_chain2 = new MockRouterChainlink();
         ChainlinkMessageReceiver receiver = new ChainlinkMessageReceiver(address(mock_router_chain2));
         // send a message
         vm.selectFork(mainnetFork_1);
@@ -132,6 +136,46 @@ contract ForkTest is Test {
         // expect message
         (bytes32 latestMessageId, uint64 latestSourceChainSelector, address latestSender, string memory latestMessage) = receiver.getLatestMessageDetails();
         assertEq(abi.encode(latestMessage), abi.encode("hello im sender"));
+    }
+
+    function testLayerZero() public {
+        address mock_sender = 0x3333333333333333333333333333333333333333;
+        vm.selectFork(mainnetFork_1);
+        address endpoint_chain1 = address(new MockEndpointLayerZero());
+        LayerZeroSender sender = new LayerZeroSender(endpoint_chain1, mock_sender);
+
+        vm.selectFork(mainnetFork_2);
+        address endpoint_chain2 = address(new MockEndpointLayerZero());
+        LayerZeroReceiver receiver = new LayerZeroReceiver(endpoint_chain2, mock_sender);
+
+        // send a message
+        vm.selectFork(mainnetFork_1);
+        sender.setPeer(1, bytes32(uint256(uint160(mock_sender)) << 96));
+        console.logString("print peer sender");
+        bytes32 sender_peer = sender.peers(1);
+        console.logBytes32(sender_peer);
+        sender.send(1, "hello im sender", bytes(hex"1234"));
+        // // receive a message
+        vm.selectFork(mainnetFork_2);
+        // // set peer
+        receiver.setPeer(1, bytes32(uint256(uint160(mock_sender)) << 96));
+        console.logString("print peer receiver");
+        bytes32 recv_peer = receiver.peers(1);
+        console.logBytes32(recv_peer);
+
+        vm.deal(endpoint_chain2,10**18);
+        vm.prank(endpoint_chain2);
+
+        Origin memory origin = Origin({
+            srcEid: 1,
+            sender: bytes32(uint256(uint160(mock_sender)) << 96),
+            nonce: 0
+        });
+        receiver.lzReceive(origin, bytes32(hex"1234"), abi.encode("hello im sender"), mock_sender, bytes(hex"00"));
+
+        // // expect message
+        string memory message = receiver.data();
+        assertEq(abi.encode(message), abi.encode("hello im sender"));
 
     }
 }
