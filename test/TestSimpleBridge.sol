@@ -4,14 +4,23 @@ pragma solidity ^0.8.13;
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
 import {Counter} from "src/Counter.sol";
-import {ChainlinkMessageReceiver} from "src/bridge-adapter/chainlink/Receiver.sol";
-import {ChainlinkMessageSender} from "src/bridge-adapter/chainlink/Sender.sol";
+
+import {ChainlinkReceiver} from "src/bridge-adapter/chainlink/Receiver.sol";
+import {ChainlinkSender} from "src/bridge-adapter/chainlink/Sender.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 import {MockRouterChainlink} from "src/bridge-adapter/chainlink/MockRouter.sol";
+
 import {MockToken} from "src/utils/MockToken.sol";
+
 import {LayerZeroReceiver} from "src/bridge-adapter/layerzero/Receiver.sol";
 import {LayerZeroSender} from "src/bridge-adapter/layerzero/Sender.sol";
 import {MockEndpointLayerZero} from "src/bridge-adapter/layerzero/MockEndpoint.sol";
+
+import {MockGasServiceAxelar} from "src/bridge-adapter/axelar/MockGasService.sol";
+import {MockGatewayAxelar} from "src/bridge-adapter/axelar/MockGateway.sol";
+import {AxelarSender} from "src/bridge-adapter/axelar/Sender.sol";
+import {AxelarReceiver} from "src/bridge-adapter/axelar/Receiver.sol";
+
 import {Origin, ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 contract ForkTest is Test {
     // the identifiers of the forks
@@ -114,10 +123,10 @@ contract ForkTest is Test {
         MockRouterChainlink mock_router_chain1 = new MockRouterChainlink();
         MockToken mock_token = new MockToken();
         address mock_link = address(mock_token);
-        ChainlinkMessageSender sender = new ChainlinkMessageSender(address(mock_router_chain1),mock_link);
+        ChainlinkSender sender = new ChainlinkSender(address(mock_router_chain1),mock_link);
         vm.selectFork(mainnetFork_2);
         MockRouterChainlink mock_router_chain2 = new MockRouterChainlink();
-        ChainlinkMessageReceiver receiver = new ChainlinkMessageReceiver(address(mock_router_chain2));
+        ChainlinkReceiver receiver = new ChainlinkReceiver(address(mock_router_chain2));
         // send a message
         vm.selectFork(mainnetFork_1);
         // function send(
@@ -126,7 +135,7 @@ contract ForkTest is Test {
         //         string memory messageText,
         //         PayFeesIn payFeesIn
         //         )
-        bytes32 messageid = sender.send(1, address(receiver), "hello im sender", ChainlinkMessageSender.PayFeesIn.Native);
+        bytes32 messageid = sender.send(1, address(receiver), "hello im sender", ChainlinkSender.PayFeesIn.Native);
         console.logBytes32(messageid);
         // receive a message
         vm.selectFork(mainnetFork_2);
@@ -175,6 +184,40 @@ contract ForkTest is Test {
 
         // // expect message
         string memory message = receiver.data();
+        assertEq(abi.encode(message), abi.encode("hello im sender"));
+
+    }
+    function testAxelar() public {
+        address mock_sender = 0x3333333333333333333333333333333333333333;
+        address mock_gas_service_chain1;
+        address mock_gateway_chain1;
+        address mock_gas_service_chain2;
+        address mock_gateway_chain2;
+
+        vm.selectFork(mainnetFork_1);
+        mock_gas_service_chain1 = address(new MockGasServiceAxelar());
+        mock_gateway_chain1 = address(new MockGatewayAxelar());
+        AxelarSender sender = new AxelarSender(mock_gateway_chain1, mock_gas_service_chain1);
+        vm.selectFork(mainnetFork_2);
+        mock_gas_service_chain2 = address(new MockGasServiceAxelar());
+        mock_gateway_chain2 = address(new MockGatewayAxelar());
+        AxelarReceiver receiver = new AxelarReceiver(mock_gateway_chain2, mock_gas_service_chain2);
+        //         string calldata destinationChain,
+        // string calldata destinationAddress,
+        // string calldata value_
+        // send a message
+        vm.selectFork(mainnetFork_1);
+        sender.send{value:1}("chain2", "0x1234", "hello im sender");
+        // receive a message
+        vm.selectFork(mainnetFork_2);
+        // bytes32 commandId,
+        // string calldata sourceChain,
+        // string calldata sourceAddress,
+        // bytes calldata payload
+        receiver.execute(bytes32(hex"0123"),"chain1", "0x1234", abi.encode("hello im sender"));
+
+        // // expect message
+        string memory message = receiver.value();
         assertEq(abi.encode(message), abi.encode("hello im sender"));
 
     }

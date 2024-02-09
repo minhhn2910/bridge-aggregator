@@ -9,7 +9,7 @@ import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.s
  * THIS IS AN EXAMPLE CONTRACT THAT USES UN-AUDITED CODE.
  * DO NOT USE THIS CODE IN PRODUCTION.
  */
-contract ChainlinkMessageSender{
+contract ChainlinkSender{
     enum PayFeesIn {
         Native,
         LINK

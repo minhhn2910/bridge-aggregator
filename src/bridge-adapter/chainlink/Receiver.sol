@@ -4,7 +4,7 @@ pragma solidity ^0.8.19;
 import {CCIPReceiver} from "@chainlink/contracts-ccip/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Client} from "@chainlink/contracts-ccip/src/v0.8/ccip/libraries/Client.sol";
 
-contract ChainlinkMessageReceiver is CCIPReceiver {
+contract ChainlinkReceiver is CCIPReceiver {
     bytes32 latestMessageId;
     uint64 latestSourceChainSelector;
     address latestSender;
