@@ -21,6 +21,10 @@ import {MockGatewayAxelar} from "src/bridge-adapter/axelar/MockGateway.sol";
 import {AxelarSender} from "src/bridge-adapter/axelar/Sender.sol";
 import {AxelarReceiver} from "src/bridge-adapter/axelar/Receiver.sol";
 
+import {WormholeReceiver} from "src/bridge-adapter/wormhole/Receiver.sol";
+import {WormholeSender} from "src/bridge-adapter/wormhole/Sender.sol";
+import {MockRelayerWormhole} from "src/bridge-adapter/wormhole/MockRelayer.sol";
+
 import {Origin, ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 contract ForkTest is Test {
     // the identifiers of the forks
@@ -219,6 +223,30 @@ contract ForkTest is Test {
         // // expect message
         string memory message = receiver.value();
         assertEq(abi.encode(message), abi.encode("hello im sender"));
+
+    }
+    function testWormhole () public {
+        address mock_sender = 0x3333333333333333333333333333333333333333;
+        address mock_relayer_chain1;
+        address mock_relayer_chain2;
+        vm.selectFork(mainnetFork_1);
+        mock_relayer_chain1 = address(new MockRelayerWormhole());
+        WormholeSender sender = new WormholeSender(mock_relayer_chain1);
+        vm.selectFork(mainnetFork_2);
+        mock_relayer_chain2 = address(new MockRelayerWormhole());
+        WormholeReceiver receiver = new WormholeReceiver(mock_relayer_chain2);
+        // send a message
+        vm.selectFork(mainnetFork_1);
+        sender.sendMessage(1, mock_sender, "hello im sender");
+        // receive a message
+        vm.selectFork(mainnetFork_2);
+        vm.deal(mock_relayer_chain2,10**18);
+        vm.prank(mock_relayer_chain2);
+        receiver.receiveWormholeMessages(abi.encode("hello im sender",mock_sender), new bytes[](0), bytes32(0), 1, bytes32(0));
+        // expect message
+        string memory message = receiver.latestGreeting();
+        assertEq(abi.encode(message), abi.encode("hello im sender"));
+
 
     }
 }

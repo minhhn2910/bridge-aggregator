@@ -9,7 +9,8 @@ remappings = [
     '@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/',
     '@layerzerolabs/lz-evm-oapp-v2/contracts/=lib/LayerZero-v2/oapp/contracts/',
     '@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/=lib/LayerZero-v2/protocol/contracts/interfaces/',
-    '@axelar-network/axelar-gmp-sdk-solidity/=node_modules/@axelar-network/axelar-gmp-sdk-solidity/'
+    '@axelar-network/axelar-gmp-sdk-solidity/=node_modules/@axelar-network/axelar-gmp-sdk-solidity/',
+    'wormhole-solidity-sdk/=lib/wormhole-solidity-sdk/src/',
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config
