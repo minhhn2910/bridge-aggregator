@@ -3,7 +3,7 @@ pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
 import "forge-std/console.sol";
-import {Counter} from "src/Counter.sol";
+
 
 import {ChainlinkReceiver} from "src/bridge-adapter/chainlink/Receiver.sol";
 import {ChainlinkSender} from "src/bridge-adapter/chainlink/Sender.sol";
@@ -79,29 +79,6 @@ contract ForkTest is Test {
         vm.selectFork(mainnetFork_2);
         vm.rollFork(1_337_000);
         assertEq(block.number, 1_337_000);
-    }
-     function testCreateContract() public {
-        vm.selectFork(mainnetFork_1);
-        assertEq(vm.activeFork(), mainnetFork_1);
-
-        // the new contract is written to `mainnetFork`'s storage
-        Counter simple = new Counter();
-
-        // and can be used as normal
-        simple.setNumber(100);
-        assertEq(simple.number(), 100);
-
-        // after switching to another contract we still know `address(simple)` but the contract only lives in `mainnetFork`
-        vm.selectFork(mainnetFork_2);
-
-        /* this call will therefore revert because `simple` now points to a contract that does not exist on the active fork
-        * it will produce following revert message:
-        *
-        * "Contract 0xCe71065D4017F316EC606Fe4422e11eB2c47c246 does not exist on active fork with id `1`
-        *       But exists on non active forks: `[0]`"
-        */
-
-        // simple.value();
     }
     /*
         struct Any2EVMMessage {
@@ -249,20 +226,4 @@ contract ForkTest is Test {
 
 
     }
-}
-contract SimpleCrossChainContract {
-    uint256 public value;
-
-    event ValueSet(uint256 value, uint256 chain_id, address destination);
-    event msgSent(uint256 _value, uint chain_id, address destination);
-
-    function sendMsg(uint256 _value, uint chain_id, address destination) public {
-        emit msgSent(_value, chain_id, destination);
-    }
-
-    function receiveMsg(uint256 _value, uint chain_id, address destination) public {
-        value = _value;
-        emit ValueSet(_value, chain_id, destination);
-    }
-
 }
