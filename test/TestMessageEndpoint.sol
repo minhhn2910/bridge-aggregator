@@ -22,6 +22,7 @@ import {AxelarMessageEndpoint} from "src/bridge-adapter/axelar/AxelarMessageEndp
 
 
 import {MockRelayerWormhole} from "src/bridge-adapter/wormhole/MockRelayer.sol";
+import {WormholeMessageEndpoint} from "src/bridge-adapter/wormhole/WormholeMessageEndpoint.sol";
 
 import {Origin, ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
@@ -174,30 +175,41 @@ contract ForkTest is Test {
         assertEq(abi.encode(new_payload), abi.encode(my_payload));
 
     }
-/*
+
     function testWormhole () public {
         address mock_sender = 0x3333333333333333333333333333333333333333;
         address mock_relayer_chain1;
         address mock_relayer_chain2;
+        bytes memory my_payload = abi.encodePacked(uint(1234), "hello im sender");
+        bytes32 messageId = keccak256(my_payload);
+
         vm.selectFork(mainnetFork_1);
         mock_relayer_chain1 = address(new MockRelayerWormhole());
-        WormholeSender sender = new WormholeSender(mock_relayer_chain1);
+        WormholeMessageEndpoint sender = new WormholeMessageEndpoint(mock_relayer_chain1);
+        sender.setTargetChainMapping("chain2", 2);
+        sender.setAddressMapping("0x1234", mock_sender);
         vm.selectFork(mainnetFork_2);
         mock_relayer_chain2 = address(new MockRelayerWormhole());
-        WormholeReceiver receiver = new WormholeReceiver(mock_relayer_chain2);
+        WormholeMessageEndpoint receiver = new WormholeMessageEndpoint(mock_relayer_chain2);
+        receiver.setTargetChainMapping("chain1", 1);
+        receiver.setAddressMapping("0x1234", mock_sender);
         // send a message
         vm.selectFork(mainnetFork_1);
-        sender.sendMessage(1, mock_sender, "hello im sender");
+        bytes32 messageid = sender.sendMessage{value:1}("chain2", "0x1234", my_payload);
         // receive a message
         vm.selectFork(mainnetFork_2);
         vm.deal(mock_relayer_chain2,10**18);
         vm.prank(mock_relayer_chain2);
-        receiver.receiveWormholeMessages(abi.encode("hello im sender",mock_sender), new bytes[](0), bytes32(0), 1, bytes32(0));
-        // expect message
-        string memory message = receiver.latestGreeting();
-        assertEq(abi.encode(message), abi.encode("hello im sender"));
+        receiver.receiveWormholeMessages(my_payload, new bytes[](0), bytes32(0), 1, bytes32(0));
 
+        // expect message
+        bytes memory new_payload = receiver.deliverMessage(messageId);
+        console.logBytes(my_payload);
+        console.logBytes(new_payload);
+
+        // expect message
+        assertEq(abi.encode(new_payload), abi.encode(my_payload));
 
     }
-    */
+
 }
