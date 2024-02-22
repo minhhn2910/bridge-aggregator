@@ -21,3 +21,10 @@ Test message endpoints:
 Test bridge aggregator:
 
 `FOUNDRY_VIA_IR=true forge test --match-path test/TestAggregator.sol  -vvv`
+
+### Disclaimer
+
+For testing and demo only. Not for production.
+
+### LICENSE 
+MIT
