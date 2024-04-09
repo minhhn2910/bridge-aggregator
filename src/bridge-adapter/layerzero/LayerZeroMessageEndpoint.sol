@@ -14,7 +14,7 @@ import { MessageEndpoint } from "src/bridge-adapter/MessageEndpoint.sol";
  */
 
 contract LayerZeroMessageEndpoint is MessageEndpoint, OAppCore, OAppSender, OAppReceiver{
-    bytes myOption = bytes(hex"1234");
+    bytes myOption = hex'0003010011010000000000000000000000000000ea60';
 
     mapping (string => uint32) public EidMapping;
     constructor(address _endpoint) OAppCore(_endpoint, msg.sender) Ownable(msg.sender) {
@@ -55,6 +55,19 @@ contract LayerZeroMessageEndpoint is MessageEndpoint, OAppCore, OAppSender, OApp
     function deliverMessage(bytes32 messageId) external view override returns(bytes memory) {
         bytes memory payload = receivedMessages[messageId];
         return payload;
+    }
+
+    /* @dev Quotes the gas needed to pay for the full omnichain transaction.
+    * @return nativeFee Estimated gas fee in native gas.
+    * @return lzTokenFee Estimated gas fee in ZRO token.
+    */
+    function quote(
+        uint32 _dstEid, // Destination chain's endpoint ID.
+        bytes memory _payload, // The message to send.
+        bytes calldata _options
+    ) public view returns (uint256 nativeFee, uint256 lzTokenFee) {
+        MessagingFee memory fee = _quote(_dstEid, _payload, _options, false);
+        return (fee.nativeFee, fee.lzTokenFee);
     }
 
     function _lzReceive(

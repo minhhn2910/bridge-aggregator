@@ -164,7 +164,7 @@ contract ForkTest is Test {
         // expect message
         assertEq(abi.encode(new_payload), abi.encode(my_payload));
     }
-*/
+
 
     function testLayerZeroDebug() public {
         address mock_sender = 0x3333333333333333333333333333333333333333;
@@ -172,10 +172,7 @@ contract ForkTest is Test {
         bytes32 messageId = keccak256(my_payload);
 
         vm.selectFork(chain_fork_eth);
-        /*
-            endpointId: 30101
-            endpoint: 0x1a44076050125825900e736c501f859c50fe728c
-        */
+
         address endpoint_chain_eth = layerzero_endpoints["ethereum"].endpoint;
         LayerZeroMessageEndpoint sender = new LayerZeroMessageEndpoint(endpoint_chain_eth);
 
@@ -192,7 +189,7 @@ contract ForkTest is Test {
         console.logBytes32(sender_peer);
         bytes32 messageid = sender.sendMessage{value:10**18}("polygon", toHexString(uint256(uint160((address(mock_sender)))), 20), my_payload);
     }
-
+*/
     function testLayerZero() public {
         address mock_sender = 0x3333333333333333333333333333333333333333;
         bytes memory my_payload = abi.encodePacked(uint(1234), "hello im sender");
@@ -217,9 +214,9 @@ contract ForkTest is Test {
         // send a message
         vm.selectFork(chain_fork_eth);
 
-        sender.setPeer(layerzero_endpoints["polygon"].endpointId, bytes32(uint256(uint160(address(receiver))) << 96));
+        sender.setPeer(layerzero_endpoints["polygon"].endpointId, bytes32(uint256(uint160(address(sender)))));
 
-        bytes memory optionValue = "\x00\x03\x01\x00\x11\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03\x0d\x40";
+        bytes memory optionValue = hex'0003010011010000000000000000000000000000ea60';
         sender.setMyOption(optionValue);
 
         console.logString("print peer sender");
@@ -228,33 +225,43 @@ contract ForkTest is Test {
         bytes32 sender_peer = sender.peers(layerzero_endpoints["polygon"].endpointId);
         sender.setEidMapping("polygon", layerzero_endpoints["polygon"].endpointId);
         console.logBytes32(sender_peer);
-        bytes32 messageid = sender.sendMessage{value:10**18}("polygon", toHexString(uint256(uint160((address(receiver)))), 20), my_payload);
-        // // receive a message
-        // vm.selectFork(chain_fork_polygon);
-        // // // set peer
-        // // receiver.setPeer(1, bytes32(uint256(uint160(mock_sender)) << 96));
-        // receiver.setPeer(layerzero_endpoints["ethereum"].endpointId, bytes32(uint256(uint160(address(sender))) << 96));
-        // receiver.setEidMapping("chain2", 1);
-        // console.logString("print peer receiver");
-        // console.logAddress(address(receiver));
-        // bytes32 recv_peer = receiver.peers(1);
-        // console.logBytes32(recv_peer);
+        // quote
+        // uint32 _dstEid, // Destination chain's endpoint ID.
+        // bytes memory _payload, // The message to send.
+        // bytes calldata _options
+        (uint fee_native, uint fee_lzToken) = sender.quote(layerzero_endpoints["polygon"].endpointId, my_payload, optionValue);
+        console.logString("fee_native");
+        console.logUint(fee_native);
+        console.logString("fee_lzToken");
+        console.logUint(fee_lzToken);
+        bytes32 messageid = sender.sendMessage{value:fee_native}("polygon", toHexString(uint256(uint160((address(receiver)))), 20), my_payload);
 
-        // vm.deal(endpoint_chain_polygon,10**18);
-        // vm.prank(endpoint_chain_polygon);
-        // Origin memory origin = Origin({
-        //     srcEid: layerzero_endpoints["ethereum"].endpointId,
-        //     sender: bytes32(uint256(uint160(address(sender))) << 96),
-        //     nonce: 0
-        // });
-        // receiver.lzReceive(origin, bytes32(hex"1234"), my_payload, mock_sender, bytes(hex"00"));
+        // receive a message
+        vm.selectFork(chain_fork_polygon);
+        // set peer
+        receiver.setPeer(1, bytes32(uint256(uint160(mock_sender))));
+        receiver.setPeer(layerzero_endpoints["ethereum"].endpointId, bytes32(uint256(uint160(address(sender))) ));
+        receiver.setEidMapping("chain2", 1);
+        console.logString("print peer receiver");
+        console.logAddress(address(receiver));
+        bytes32 recv_peer = receiver.peers(1);
+        console.logBytes32(recv_peer);
 
-        // bytes memory new_payload = receiver.deliverMessage(messageId);
-        // console.logBytes(my_payload);
-        // console.logBytes(new_payload);
+        vm.deal(endpoint_chain_polygon,10**18);
+        vm.prank(endpoint_chain_polygon);
+        Origin memory origin = Origin({
+            srcEid: layerzero_endpoints["ethereum"].endpointId,
+            sender: bytes32(uint256(uint160(address(sender)))),
+            nonce: 0
+        });
+        receiver.lzReceive(origin, bytes32(hex"1234"), my_payload, mock_sender, bytes(hex"00"));
 
-        // // expect message
-        // assertEq(abi.encode(new_payload), abi.encode(my_payload));
+        bytes memory new_payload = receiver.deliverMessage(messageId);
+        console.logBytes(my_payload);
+        console.logBytes(new_payload);
+
+        // expect message
+        assertEq(abi.encode(new_payload), abi.encode(my_payload));
 
     }
 
