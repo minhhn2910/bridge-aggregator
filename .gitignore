@@ -12,5 +12,7 @@ package-lock.json
 # Docs
 docs/
 
+backup/
+
 # Dotenv file
 .env
