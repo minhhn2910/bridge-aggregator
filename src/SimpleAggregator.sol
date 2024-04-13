@@ -1,10 +1,11 @@
 pragma solidity ^0.8.0;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
-interface MessageEndpoint {
-    function sendMessage(string calldata destinationChain, string calldata destinationAddress, bytes calldata payload) external;
-    function deliverMessage(bytes32 messageId) external view returns (bytes memory);
-}
+import {MessageEndpoint} from "src/bridge-adapter/MessageEndpoint.sol";
+// interface MessageEndpoint {
+//     function sendMessage(string calldata destinationChain, string calldata destinationAddress, bytes calldata payload) external payable;
+//     function deliverMessage(bytes32 messageId) external view returns (bytes memory);
+// }
 
 contract SimpleAggregator is Ownable {
     MessageEndpoint[] public endpoints;
@@ -42,7 +43,7 @@ contract SimpleAggregator is Ownable {
 
     function sendMultipleMessages(string calldata destinationChain, string calldata destinationAddress, bytes calldata payload) public payable onlyOwner {
         for (uint i = 0; i < endpoints.length; i++) {
-            endpoints[i].sendMessage(destinationChain, destinationAddress, payload);
+            endpoints[i].sendMessage{value: msg.value/endpoints.length}(destinationChain, destinationAddress, payload);
         }
     }
 
@@ -70,11 +71,13 @@ contract SimpleAggregator is Ownable {
 
         // Determine if the number of matches meets the threshold N
         verified = matchCount >= theshold;
-        if (verified) {
-            finalPayload = referencePayload;
-        }
+        // if (verified) {
+        finalPayload = referencePayload;
+        // }
 
         return (verified, finalPayload);
     }
+
+    receive () external payable {}
 
 }

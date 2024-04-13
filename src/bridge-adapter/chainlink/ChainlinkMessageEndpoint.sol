@@ -94,4 +94,5 @@ contract ChainlinkMessageEndpoint is CCIPReceiver, MessageEndpoint, Ownable {
         bytes memory payload = receivedMessages[messageId];
         return payload;
     }
+    receive () external payable {}
 }

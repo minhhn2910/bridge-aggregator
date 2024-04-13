@@ -41,4 +41,5 @@ contract AxelarMessageEndpoint is MessageEndpoint, AxelarExecutable{
         bytes32 messageId = keccak256(payload_);
         receivedMessages[messageId] = payload_;
     }
+    receive () external payable {}
 }

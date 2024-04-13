@@ -8,12 +8,13 @@ import { OAppCore } from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppCore.
 import {IOAppCore} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/interfaces/IOAppCore.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { MessageEndpoint } from "src/bridge-adapter/MessageEndpoint.sol";
+
 /**
  * @notice THIS IS AN EXAMPLE CONTRACT. DO NOT USE THIS CODE IN PRODUCTION.
  */
 
 contract LayerZeroMessageEndpoint is MessageEndpoint, OAppCore, OAppSender, OAppReceiver{
-    bytes myOption = bytes(hex"1234");
+    bytes myOption = hex'0003010011010000000000000000000000000000ea60';
 
     mapping (string => uint32) public EidMapping;
     constructor(address _endpoint) OAppCore(_endpoint, msg.sender) Ownable(msg.sender) {
@@ -35,6 +36,7 @@ contract LayerZeroMessageEndpoint is MessageEndpoint, OAppCore, OAppSender, OApp
         bytes calldata payload
     ) external payable override returns (bytes32) {
         uint32 _dstEid = EidMapping[destinationChain];
+        // bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200000, 0);
         // mysender.send(_dstEid, payload, myOption);
         _lzSend(
             _dstEid,
@@ -53,6 +55,19 @@ contract LayerZeroMessageEndpoint is MessageEndpoint, OAppCore, OAppSender, OApp
     function deliverMessage(bytes32 messageId) external view override returns(bytes memory) {
         bytes memory payload = receivedMessages[messageId];
         return payload;
+    }
+
+    /* @dev Quotes the gas needed to pay for the full omnichain transaction.
+    * @return nativeFee Estimated gas fee in native gas.
+    * @return lzTokenFee Estimated gas fee in ZRO token.
+    */
+    function quote(
+        uint32 _dstEid, // Destination chain's endpoint ID.
+        bytes memory _payload, // The message to send.
+        bytes calldata _options
+    ) public view returns (uint256 nativeFee, uint256 lzTokenFee) {
+        MessagingFee memory fee = _quote(_dstEid, _payload, _options, false);
+        return (fee.nativeFee, fee.lzTokenFee);
     }
 
     function _lzReceive(
