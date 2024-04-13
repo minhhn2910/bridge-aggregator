@@ -28,7 +28,7 @@ contract SimpleRegistry is Ownable {
     // keep track of minting and burning
 
     // message will be in this format {address, uint, bool} => {receiver, amount, isMint}
-    constructor(address _aggregator) Ownable(msg.sender) {
+    constructor(address payable _aggregator) Ownable(msg.sender) {
         token = new SimpleToken(); // Registry is the owner;
         aggregator = SimpleAggregator(_aggregator);
     }
@@ -41,7 +41,7 @@ contract SimpleRegistry is Ownable {
         ChainIdMapping[chainId] = chain;
     }
 
-    function setAggregator(address _aggregator) public onlyOwner {
+    function setAggregator(address payable _aggregator) public onlyOwner {
         aggregator = SimpleAggregator(_aggregator);
     }
 
@@ -65,7 +65,7 @@ contract SimpleRegistry is Ownable {
      */
     function  sendMultipleMessages(uint destinationId, address receiver_address, bytes calldata payload) public payable onlyOwner{
         // arbitrary payload
-        aggregator.sendMultipleMessages(ChainIdMapping[destinationId], ChainDestinationAddress[destinationId], payload);
+        aggregator.sendMultipleMessages{value:msg.value}(ChainIdMapping[destinationId], ChainDestinationAddress[destinationId], payload);
     }
 
     /**
@@ -115,9 +115,6 @@ contract SimpleRegistry is Ownable {
     function setThreshold(uint _threshold) public onlyOwner {
         aggregator.setThreshold(_threshold);
     }
-
-
-
-
+    receive () external payable {}
 
 }

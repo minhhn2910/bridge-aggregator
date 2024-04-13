@@ -130,7 +130,7 @@ contract ForkTest is Test {
 
         SimpleAggregator my_receiver_aggregator = new SimpleAggregator(receivers);
 
-        SimpleRegistry my_receiver_registry = new SimpleRegistry(address(my_receiver_aggregator));
+        SimpleRegistry my_receiver_registry = new SimpleRegistry(payable(my_receiver_aggregator));
         // may need to set owner or create aggregator inside constructor
 
 

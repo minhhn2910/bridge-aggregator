@@ -26,6 +26,11 @@ import {WormholeMessageEndpoint} from "src/bridge-adapter/wormhole/WormholeMessa
 
 import {Origin, ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
+
+
+import {SimpleAggregator} from "src/SimpleAggregator.sol";
+import {SimpleRegistry} from "src/SimpleRegistry.sol";
+import {SimpleToken} from "src/SimpleToken.sol";
 contract ForkTest is Test {
     struct LayerzeroEndpoint{
         address endpoint;
@@ -128,119 +133,123 @@ contract ForkTest is Test {
         });
 
     }
-    function toHexString(uint256 value, uint256 length) internal pure returns (string memory) {
-        bytes memory buffer = new bytes(2 * length + 2);
-        buffer[0] = "0";
-        buffer[1] = "x";
-        for (uint256 i = 2 * length + 1; i > 1; --i) {
-            buffer[i] = bytes1(uint8(87 + value % 16 + ((value % 16) / 10) * 39));
-            value /= 16;
-        }
-        require(value == 0, "Strings: hex length insufficient");
-        return string(buffer);
+    struct TokenMessage {
+        address receiver;
+        uint256 amount;
+        bool isMint;
     }
+    function testAggregatorFork() public {
 
-    function testAxelarMessageEndpointFork() public {
-        address mock_sender = 0x3333333333333333333333333333333333333333;
-        bytes memory my_payload = abi.encodePacked(uint(1234), "hello im sender");
+        bool verified; bytes memory finalPayload;
+        TokenMessage memory tokenMessage = TokenMessage({
+            receiver: address(0x1111111111111111111111111111111111111111),
+            amount: 100,
+            isMint: true
+        });
+        // bytes memory my_payload = abi.encodePacked(uint(1234), "hello im sender test");
+        bytes memory my_payload = abi.encode(tokenMessage);
         bytes32 messageId = keccak256(my_payload);
 
+        // Axelar
         vm.selectFork(chain_fork_eth);
-        AxelarMessageEndpoint sender = new AxelarMessageEndpoint(axelar_endpoints["ethereum"].gateway,
+        AxelarMessageEndpoint axelar_sender = new AxelarMessageEndpoint(axelar_endpoints["ethereum"].gateway,
                                      axelar_endpoints["ethereum"].gasService);
-        string memory sender_addr_string = vm.toString(address(sender));
+        string memory axelar_sender_addr_string = vm.toString(address(axelar_sender));
         vm.selectFork(chain_fork_polygon);
-        AxelarMessageEndpoint receiver = new AxelarMessageEndpoint(axelar_endpoints["polygon"].gateway,
+        AxelarMessageEndpoint axelar_receiver = new AxelarMessageEndpoint(axelar_endpoints["polygon"].gateway,
                                      axelar_endpoints["polygon"].gasService);
-        string memory receiver_addr_string = vm.toString(address(receiver));
+        string memory axelar_receiver_addr_string = vm.toString(address(axelar_receiver));
+
+        // Chainlink
+        // setup
 
         vm.selectFork(chain_fork_eth);
-        sender.sendMessage{value:5*10**18}(axelar_endpoints["polygon"].chainName,
-                                           receiver_addr_string, my_payload);
-        // receive a message
-        vm.selectFork(chain_fork_polygon);
-        MockAxelarAuth polygon_auth = MockAxelarAuth(axelar_endpoints["polygon"].authModule);
-        //  will revert
-        // bool res = polygon_auth.validateProof(messageId, my_payload);
-        // console.log("validateProof %s", res);
+        ChainlinkMessageEndpoint chainlink_sender = new ChainlinkMessageEndpoint(chainlink_endpoints["ethereum"].routerAddress);
+        chainlink_sender.setChainMapping("polygon", chainlink_endpoints["polygon"].chainSelector);
 
+        vm.selectFork(chain_fork_polygon);
+        ChainlinkMessageEndpoint chainlink_receiver = new ChainlinkMessageEndpoint(chainlink_endpoints["polygon"].routerAddress);
+        chainlink_receiver.setChainMapping("ethereum", chainlink_endpoints["ethereum"].chainSelector);
+
+
+
+        // LayzerZero
+        vm.selectFork(chain_fork_eth);
+
+        address endpoint_chain_eth = layerzero_endpoints["ethereum"].endpoint;
+        LayerZeroMessageEndpoint layerzero_sender = new LayerZeroMessageEndpoint(endpoint_chain_eth);
+
+        vm.selectFork(chain_fork_polygon);
+
+        address endpoint_chain_polygon = layerzero_endpoints["polygon"].endpoint;
+        LayerZeroMessageEndpoint layerzero_receiver = new LayerZeroMessageEndpoint(endpoint_chain_polygon);
+
+        vm.selectFork(chain_fork_eth);
+
+        //setup sender side
+        chainlink_sender.setAddressMapping("receiver_address", address(chainlink_receiver));
+
+        layerzero_sender.setPeer(layerzero_endpoints["polygon"].endpointId, bytes32(uint256(uint160(address(layerzero_receiver)))));
+        bytes memory optionValue = hex'0003010011010000000000000000000000000000ea60';
+        layerzero_sender.setMyOption(optionValue);
+        layerzero_sender.setEidMapping("polygon", layerzero_endpoints["polygon"].endpointId);
+
+
+        // use aggregator
+        address [] memory senders = new address[](3);
+        senders[0] = address(axelar_sender);
+        senders[1] = address(chainlink_sender);
+        senders[2] = address(layerzero_sender);
+        SimpleAggregator my_sender_aggregator = new SimpleAggregator(senders);
+        my_sender_aggregator.sendMultipleMessages{value:10**18}("polygon", "receiver_address", my_payload);
+
+        vm.selectFork(chain_fork_polygon);
+        address [] memory receivers = new address[](3);
+        receivers[0] = address(axelar_receiver);
+        receivers[1] = address(chainlink_receiver);
+        receivers[2] = address(layerzero_receiver);
+
+        SimpleAggregator my_receiver_aggregator = new SimpleAggregator(receivers);
+
+        SimpleRegistry my_receiver_registry = new SimpleRegistry(payable(my_receiver_aggregator));
+        // may need to set owner or create aggregator inside constructor
+
+        // receive a message Axelar
+        MockAxelarAuth polygon_auth = MockAxelarAuth(axelar_endpoints["polygon"].authModule);
         deployCodeTo("MockAxelarAuth.sol", axelar_endpoints["polygon"].authModule);
         bool res2 = polygon_auth.validateProof(messageId, my_payload);
         console.log("validateProof %s", res2);
         IAxelarGateway axelar_gateway = IAxelarGateway(axelar_endpoints["polygon"].gateway);
-        // prepare payload
-        // (chainId, commandIds, commands, params) = abi.decode(data, (uint256, bytes32[], string[], bytes[]));
-
         // Prepare payload with dynamic arrays
         bytes32[] memory commandIds = new bytes32[](1);
         commandIds[0] = messageId;  // Assuming messageId is a bytes32 variable
-
         string[] memory commands = new string[](1);
         commands[0] = "approveContractCall";  // Command as a string
-
         bytes[] memory params = new bytes[](1);
-        // params[0] = my_payload;  // Assuming my_payload is a bytes variable
 
-        // params should be this :
-        //  (
-        //     string memory sourceChain,
-        //     string memory sourceAddress,
-        //     address contractAddress, // the receiving contract address
-        //     bytes32 payloadHash,
-        //     bytes32 sourceTxHash, // set to dummy val
-        //     uint256 sourceEventIndex // set to dummy val
-        // ) = abi.decode(params, (string, string, address, bytes32, bytes32, uint256));
-        // _setContractCallApproved(commandId, sourceChain, sourceAddress, contractAddress, payloadHash);
-        // Encode data
-        bytes memory params_data = abi.encode(axelar_endpoints["ethereum"].chainName, sender_addr_string,
-                                        address(receiver), keccak256(my_payload), messageId, 1);
+        bytes memory params_data = abi.encode(axelar_endpoints["ethereum"].chainName, axelar_sender_addr_string,
+                                        address(axelar_receiver), keccak256(my_payload), messageId, 1);
         params[0] = params_data;
         bytes memory data = abi.encode(axelar_endpoints["polygon"].chainId, commandIds, commands, params);
 
-        console.log("encoded data");
-        console.logBytes(data);
         bytes32 payloadHash = keccak256(my_payload);
         bytes memory encoded_data_with_proof = abi.encode(data, my_payload);
         axelar_gateway.execute(encoded_data_with_proof);
-        // gateway.validateContractCall(commandId, sourceChain, sourceAddress, payloadHash)
-        // vm.prank(address(receiver));
-        // bool validated = axelar_gateway.validateContractCall(messageId, axelar_endpoints["ethereum"].chainName,
-        //                                  sender_addr_string, payloadHash);
-        // console.log("gateway validated %s", validated);
+        axelar_receiver.execute(messageId, axelar_endpoints["ethereum"].chainName,
+                            axelar_sender_addr_string, my_payload);
 
 
-        receiver.execute(messageId, axelar_endpoints["ethereum"].chainName,
-                            sender_addr_string, my_payload);
+        (verified, finalPayload) = my_receiver_aggregator.aggregateMultipleMessages(messageId);
+        console.logBool(verified);
+        console.logBytes(finalPayload);
+        // expect not verified
+        assertEq(verified, false);
+        assertEq(abi.encode(finalPayload), abi.encode(my_payload));
 
-        bytes memory new_payload = receiver.deliverMessage(messageId);
-        // // expect message
-        assertEq(abi.encode(new_payload), abi.encode(my_payload));
-    }
 
+        // receive a message Chainlink
 
-    function testChainlinkMessageEndpointFork() public{
-        address mock_sender = 0x3333333333333333333333333333333333333333;
-        bytes memory my_payload = abi.encodePacked(uint(1234), "hello im sender");
-        bytes32 messageId = keccak256(my_payload);
-
-        // setup
-        vm.selectFork(chain_fork_eth);
-        ChainlinkMessageEndpoint sender = new ChainlinkMessageEndpoint(chainlink_endpoints["ethereum"].routerAddress);
-        sender.setChainMapping("polygon", chainlink_endpoints["polygon"].chainSelector);
-
-        vm.selectFork(chain_fork_polygon);
-        ChainlinkMessageEndpoint receiver = new ChainlinkMessageEndpoint(chainlink_endpoints["polygon"].routerAddress);
-        receiver.setChainMapping("ethereum", chainlink_endpoints["ethereum"].chainSelector);
-
-        // send a message
-        vm.selectFork(chain_fork_eth);
-        sender.setAddressMapping("receiver_address", address(receiver));
-        bytes32 messageid = sender.sendMessage{value:5*10**18}("polygon", "receiver_address", my_payload);
-
-        // receive a message
-        vm.selectFork(chain_fork_polygon);
-
-        receiver.setAddressMapping("sender_address", address(sender));
+        chainlink_receiver.setAddressMapping("sender_address", address(chainlink_sender));
         address receiver_offramp = chainlink_lanes["ethpolygon"].offRampAddress;
 
         // simulating offramp submitting message
@@ -250,7 +259,7 @@ contract ForkTest is Test {
         Client.Any2EVMMessage memory message = Client.Any2EVMMessage({
             messageId: bytes32(0),
             sourceChainSelector: chainlink_lanes["ethpolygon"].srcChainSelector,
-            sender: abi.encode(address(sender)),
+            sender: abi.encode(address(chainlink_sender)),
             data: my_payload,
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
@@ -258,95 +267,56 @@ contract ForkTest is Test {
         vm.prank(address(receiver_offramp));
 
         IRouter router = IRouter(chainlink_endpoints["polygon"].routerAddress);
-        (bool success, bytes memory retData, uint256 gasUsed) = router.routeMessage(message, 100, 1000000, address(receiver));
-        // receiver.ccipReceive(message);
-        //print
-        console.log("route message result\n");
-        console.logBool(success);
-        console.logBytes(retData);
-        console.logUint(gasUsed);
-        bytes memory new_payload = receiver.deliverMessage(messageId);
-        console.logBytes(my_payload);
-        console.logBytes(new_payload);
+        (bool success, bytes memory retData, uint256 gasUsed) = router.routeMessage(message, 100, 1000000, address(chainlink_receiver));
 
+
+        (verified, finalPayload) = my_receiver_aggregator.aggregateMultipleMessages(messageId);
+        console.logBool(verified);
+        console.logBytes(finalPayload);
+        // expect verified
+        assertEq(verified, true);
         // expect message
-        assertEq(abi.encode(new_payload), abi.encode(my_payload));
+        assertEq(abi.encode(finalPayload), abi.encode(my_payload));
 
-    }
 
-    function testLayerZero() public {
-        address mock_sender = 0x3333333333333333333333333333333333333333;
-        bytes memory my_payload = abi.encodePacked(uint(1234), "hello im sender");
-        bytes32 messageId = keccak256(my_payload);
+        // set threshold to 3 to test
+        my_receiver_aggregator.setThreshold(3);
+        (verified, finalPayload) = my_receiver_aggregator.aggregateMultipleMessages(messageId);
+        assertEq(verified, false);
+        console.logBool(verified);
+        console.logBytes(finalPayload);
 
-        vm.selectFork(chain_fork_eth);
-        /*
-            endpointId: 30101
-            endpoint: 0x1a44076050125825900e736c501f859c50fe728c
-        */
-        address endpoint_chain_eth = layerzero_endpoints["ethereum"].endpoint;
-        LayerZeroMessageEndpoint sender = new LayerZeroMessageEndpoint(endpoint_chain_eth);
+        // receive a message LayerZero
 
-        vm.selectFork(chain_fork_polygon);
-        /*
-            endpointId: 30109
-            endpoint: 0x1a44076050125825900e736c501f859c50fe728c
-        */
-        address endpoint_chain_polygon = layerzero_endpoints["polygon"].endpoint;
-        LayerZeroMessageEndpoint receiver = new LayerZeroMessageEndpoint(endpoint_chain_polygon);
-
-        // send a message
-        vm.selectFork(chain_fork_eth);
-
-        sender.setPeer(layerzero_endpoints["polygon"].endpointId, bytes32(uint256(uint160(address(sender)))));
-        bytes memory optionValue = hex'0003010011010000000000000000000000000000ea60';
-        sender.setMyOption(optionValue);
-
-        console.logString("print peer sender");
-        console.logAddress(address(sender));
-        console.logAddress(address(receiver));
-        bytes32 sender_peer = sender.peers(layerzero_endpoints["polygon"].endpointId);
-        sender.setEidMapping("polygon", layerzero_endpoints["polygon"].endpointId);
-        console.logBytes32(sender_peer);
-        // quote
-        // uint32 _dstEid, // Destination chain's endpoint ID.
-        // bytes memory _payload, // The message to send.
-        // bytes calldata _options
-        (uint fee_native, uint fee_lzToken) = sender.quote(layerzero_endpoints["polygon"].endpointId, my_payload, optionValue);
-        console.logString("fee_native");
-        console.logUint(fee_native);
-        console.logString("fee_lzToken");
-        console.logUint(fee_lzToken);
-        bytes32 messageid = sender.sendMessage{value:fee_native}("polygon", toHexString(uint256(uint160((address(receiver)))), 20), my_payload);
-
-        // receive a message
-        vm.selectFork(chain_fork_polygon);
-        // set peer
-        receiver.setPeer(1, bytes32(uint256(uint160(mock_sender))));
-        receiver.setPeer(layerzero_endpoints["ethereum"].endpointId, bytes32(uint256(uint160(address(sender))) ));
+        layerzero_receiver.setPeer(layerzero_endpoints["ethereum"].endpointId, bytes32(uint256(uint160(address(layerzero_sender)))));
 
         console.logString("print peer receiver");
-        console.logAddress(address(receiver));
-        bytes32 recv_peer = receiver.peers(1);
+        console.logAddress(address(layerzero_receiver));
+        bytes32 recv_peer = layerzero_receiver.peers(1);
         console.logBytes32(recv_peer);
 
         vm.deal(endpoint_chain_polygon,10**18);
         vm.prank(endpoint_chain_polygon);
         Origin memory origin = Origin({
             srcEid: layerzero_endpoints["ethereum"].endpointId,
-            sender: bytes32(uint256(uint160(address(sender)))),
+            sender: bytes32(uint256(uint160(address(layerzero_sender)))),
             nonce: 0
         });
-        receiver.lzReceive(origin, bytes32(hex"1234"), my_payload, mock_sender, bytes(hex"00"));
 
-        bytes memory new_payload = receiver.deliverMessage(messageId);
-        console.logBytes(my_payload);
-        console.logBytes(new_payload);
-
+        layerzero_receiver.lzReceive(origin, bytes32(hex"1234"), my_payload, address(layerzero_sender), bytes(hex"00"));
+        (verified, finalPayload) = my_receiver_aggregator.aggregateMultipleMessages(messageId);
+        // expect verified
+        assertEq(verified, true);
         // expect message
-        assertEq(abi.encode(new_payload), abi.encode(my_payload));
+        assertEq(abi.encode(finalPayload), abi.encode(my_payload));
+
+        SimpleToken token = my_receiver_registry.token();
+        // precondition
+        assertEq(token.balanceOf(address(0x1111111111111111111111111111111111111111)), 0);
+        // minting action
+        my_receiver_registry.receiveRemoteMessage(messageId);
+        // postcondition
+        assertEq(token.balanceOf(address(0x1111111111111111111111111111111111111111)), 100);
 
     }
-
-
 }
